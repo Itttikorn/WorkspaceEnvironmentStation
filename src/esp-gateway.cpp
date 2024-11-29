@@ -1,3 +1,4 @@
+// Libraries
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
 #include <DHT_U.h>
@@ -6,10 +7,10 @@
 #include <WiFi.h>
 #include <ArduinoJson.h>
 #include <WiFiClientSecure.h>
-#include <LiquidCrystal_I2C.h>
 #include <HTTPClient.h>
 #include "time.h"
 
+//Variables
 const char *ssid = "Ittikorn-Hotspot";
 const char *password = "itttikorn";
 const char *node_ssid = "ESP32-Node";
@@ -44,30 +45,33 @@ const char* test_root_ca= \
 "WKpXzSs39MvdnWfIWG8c7gifjBnEyVMu2XGQAcghgL2v3MhNio3e9Tb7hejmI+Xx\n" \
 "i9z9V60YtFhzUiiiKn3FDJVuoNEprQWO\n" \
 "-----END CERTIFICATE-----\n";
+uint32_t delayMS;
+BH1750 lightMeter;
+const char* ntpServer = "pool.ntp.org";
 
+//Pins
 #define SMOKEPIN 34
 #define REDPIN 2
 #define GREENPIN 4
 #define FANPIN 5
 
-
-uint32_t delayMS;
-
-BH1750 lightMeter;
-
+//WiFi settings
 WiFiServer server(80);
-
 IPAddress localIP(192, 168, 4, 1); // Fixed IP for ESP1
 IPAddress gateway(192, 168, 4, 1);
 IPAddress subnet(255, 255, 255, 0);
 
-const char* ntpServer = "pool.ntp.org";
-
 void setup()
 {
   Serial.begin(9600);
+
+  //Setup LED status pins
   pinMode(REDPIN, OUTPUT);
   pinMode(GREENPIN, OUTPUT);
+  pinMode(SMOKEPIN, INPUT);
+  pinMode(FANPIN, OUTPUT);
+
+  //Setup WiFi
   WiFi.mode(WIFI_AP_STA);
   WiFi.begin(ssid, password);
   Wire.begin(21, 22);
@@ -76,10 +80,11 @@ void setup()
   WiFi.softAP(node_ssid, node_password, 6, 0, 4);
   server.begin();
   Serial.println("Server started");
+  
+  //Delay for sensor readings
   delayMS = 30000;
-  pinMode(SMOKEPIN, INPUT);
-  pinMode(FANPIN, OUTPUT);
 
+  //Initialize light sensor
   if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE))
   {
     Serial.println(F("BH1750 configured successfully"));
@@ -88,29 +93,29 @@ void setup()
   {
     Serial.println(F("Error configuring BH1750"));
   }
-
   Serial.println(F("BH1750 Test begin"));
+
+  //Set ESP32 time
   configTime(0, 0, ntpServer);
 }
 
 void loop()
 {
+  //Initialize variables
   int sensorValue = 0;
   float lux = 0.0;
   bool smoke = false;
-
   float temperature = 0.0;
   float humidity = 0.0;
-
   int peopleCount = 0;
 
+  //Check WiFi connection
   if (WiFi.status() != WL_CONNECTED)
   {
     digitalWrite(REDPIN, HIGH);
     digitalWrite(GREENPIN, LOW);
     Serial.println("WiFi not connected, attempting to reconnect...");
     WiFi.begin(ssid, password);
-    unsigned long startAttemptTime = millis();
 
     // Keep trying to reconnect for 10 seconds
     while (WiFi.status() != WL_CONNECTED)
@@ -128,8 +133,12 @@ void loop()
       Serial.println("Failed to reconnect to WiFi");
     }
   }
+
+  //Enable LED status light
   digitalWrite(REDPIN, LOW);
   digitalWrite(GREENPIN, HIGH);
+
+  //Check for client connection
   WiFiClient client = server.available();
   if (client)
   {
@@ -156,7 +165,7 @@ void loop()
         return;
       }
 
-      // Make a GET request to the specified URL
+      // Make a GET request to python server
       HTTPClient http;
       http.begin("http://192.168.4.5:5000/people_count");
       int httpResponseCode = http.GET();
@@ -201,10 +210,12 @@ void loop()
     client.stop();
   }
 
+  // Read sensor values
   sensorValue = analogRead(SMOKEPIN);
   Serial.println(sensorValue);
   lux = lightMeter.readLightLevel();
 
+  // Check for smoke
   if (sensorValue >= 1200)
   {
     smoke = true;
@@ -213,14 +224,19 @@ void loop()
   {
     smoke = false;
   }
+
+  // Check for people count
   if(peopleCount < 0){
     peopleCount = 0;
   }
+
+  // Check for temperature and humidity to turn on fan
   if(temperature >= 27 || humidity >= 60){
     digitalWrite(FANPIN, HIGH);
   }else{
     digitalWrite(FANPIN, LOW);
   }
+  
   // Prepare JSON payload
   DynamicJsonDocument jsonDoc(1024);
   jsonDoc["temperature"] = temperature;
@@ -232,18 +248,14 @@ void loop()
   String jsonData;
   serializeJson(jsonDoc, jsonData);
 
-  // Send data to REST API
+  // POST data to REST API
   if (WiFi.status() == WL_CONNECTED)
   {
     WiFiClientSecure client;
     client.setCACert(test_root_ca);
     client.setInsecure();
     HTTPClient http;
-    http.begin(client, "https://esp-backend-five.vercel.app/api/v1/logs/"); // Specify your REST API endpoint
-
-    // Handle 308 redirect
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.addHeader("Content-Type", "application/json");
+    http.begin(client, "https://esp-backend-five.vercel.app/api/v1/logs/");
 
     int httpResponseCode = http.POST(jsonData);
 
@@ -265,6 +277,7 @@ void loop()
   {
     Serial.println("Error in WiFi connection");
   }
+  
   // Print the values
   Serial.print("Temperature: ");
   Serial.print(temperature);
@@ -277,6 +290,7 @@ void loop()
   Serial.println(" lux");
   Serial.print("Smoke Sensor Value: ");
   Serial.println(smoke);
+  
   // Delay between measurements.
   delay(delayMS);
 }

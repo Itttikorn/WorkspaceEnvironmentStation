@@ -1,3 +1,4 @@
+// Libraries
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
 #include <DHT_U.h>
@@ -5,21 +6,19 @@
 #include <BH1750.h>
 #include <WiFi.h>
 
+// Pins
 #define DHTPIN 15 // Digital pin connected to the DHT sensor
 #define DHTTYPE DHT11 // DHT 11
-
 #define REDPIN 2
 #define GREENPIN 4
 
+// Variables
 DHT_Unified dht(DHTPIN, DHTTYPE);
-
 uint32_t delayMS;
-
-BH1750 lightMeter;
-
 const char *ssid = "ESP32-Node";
 const char *password = "12345678";
 
+// WiFi settings
 IPAddress serverIP(192, 168, 4, 1); // Fixed IP of ESP1
 const uint16_t serverPort = 80;
 WiFiClient client;
@@ -29,11 +28,15 @@ void setup()
   Serial.begin(9600);
   pinMode(REDPIN,OUTPUT);
   pinMode(GREENPIN,OUTPUT);
+  
+  //Initialize pins
   digitalWrite(REDPIN, HIGH);
   digitalWrite(GREENPIN, LOW);
+  
   // Initialize device.
   dht.begin();
   Serial.println(F("DHTxx Unified Sensor Example"));
+  
   // Print temperature sensor details.
   sensor_t sensor;
   dht.temperature().getSensor(&sensor);
@@ -55,6 +58,7 @@ void setup()
   Serial.print(sensor.resolution);
   Serial.println(F("°C"));
   Serial.println(F("------------------------------------"));
+  
   // Print humidity sensor details.
   dht.humidity().getSensor(&sensor);
   Serial.println(F("Humidity Sensor"));
@@ -74,8 +78,11 @@ void setup()
   Serial.print(sensor.resolution);
   Serial.println(F("%"));
   Serial.println(F("------------------------------------"));
+  
   // Set delay between sensor readings based on sensor details.
   delayMS = sensor.min_delay / 1000;
+
+  // Connect to WiFi network
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   Serial.print("Connecting To WiFi Network .");
@@ -91,6 +98,7 @@ void setup()
 
 void loop()
 {
+    // Check if the WiFi connection is still active
   if (!client.connected())
   {
     if (!client.connect(serverIP, serverPort)){
@@ -124,11 +132,14 @@ void loop()
       {
         Serial.println(F("Error reading temperature!"));
       }
+      
       // Get humidity event and print its value.
       if (isnan(humidityEvent.relative_humidity))
       {
         Serial.println(F("Error reading humidity!"));
       }
+      
+      // Send response to the server
       String jsonResponse = "{\"temperature\": " + String(tempEvent.temperature) + ", \"humidity\": " + String(humidityEvent.relative_humidity) + "}";
       client.println(jsonResponse);
       Serial.println("Sent response: " + jsonResponse);
